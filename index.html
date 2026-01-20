@@ -1,30 +1,13 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Professional Calculator</title>
+    <title>Pro Calculator</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        darkMode: 'class',
-        theme: {
-          extend: {
-            colors: {
-              primary: '#FF9F0A',
-              'primary-hover': '#D48405',
-              secondary: '#505050',
-              'secondary-hover': '#606060',
-              dark: '#1C1C1C',
-              light: '#F5F5F7'
-            }
-          }
-        }
-      }
-    </script>
   </head>
-  <body class="bg-gray-100 dark:bg-black transition-colors duration-300">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
