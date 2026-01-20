@@ -1,275 +1,229 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Delete, History, Moon, Sun, RotateCcw } from 'lucide-react';
+import { Delete, History, RotateCcw, Equal } from 'lucide-react';
 
-// --- Types ---
 type Operation = '+' | '-' | '*' | '/' | null;
 
-// --- Helper: Number Formatting ---
-const formatOperand = (operand: string) => {
-  if (operand === '') return '';
-  if (operand === '-') return '-';
-  // Handle decimal point during typing
-  const [integer, decimal] = operand.split('.');
-  if (decimal == null) {
-    return new Intl.NumberFormat('en-US').format(BigInt(integer));
-  }
-  return `${new Intl.NumberFormat('en-US').format(BigInt(integer))}.${decimal}`;
-};
-
 export default function App() {
-  // --- State ---
-  const [currentOperand, setCurrentOperand] = useState('0');
-  const [previousOperand, setPreviousOperand] = useState<string | null>(null);
-  const [operation, setOperation] = useState<Operation>(null);
-  const [overwrite, setOverwrite] = useState(false);
-  const [darkMode, setDarkMode] = useState(true);
+  const [display, setDisplay] = useState('0');
+  const [firstOperand, setFirstOperand] = useState<number | null>(null);
+  const [operator, setOperator] = useState<Operation>(null);
+  const [waitingForSecondOperand, setWaitingForSecondOperand] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
 
-  // --- Theme Toggler ---
-  useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
+  const inputDigit = useCallback((digit: string) => {
+    if (waitingForSecondOperand) {
+      setDisplay(digit);
+      setWaitingForSecondOperand(false);
     } else {
-      document.documentElement.classList.remove('dark');
+      setDisplay(display === '0' ? digit : display + digit);
     }
-  }, [darkMode]);
+  }, [display, waitingForSecondOperand]);
 
-  // --- Logic ---
-  const clear = () => {
-    setCurrentOperand('0');
-    setPreviousOperand(null);
-    setOperation(null);
-    setOverwrite(false);
-  };
-
-  const deleteDigit = () => {
-    if (overwrite) {
-      setCurrentOperand('0');
-      setOverwrite(false);
+  const inputDecimal = useCallback(() => {
+    if (waitingForSecondOperand) {
+      setDisplay('0.');
+      setWaitingForSecondOperand(false);
       return;
     }
-    if (currentOperand === '0') return;
-    if (currentOperand.length === 1) {
-      setCurrentOperand('0');
-    } else {
-      setCurrentOperand(currentOperand.slice(0, -1));
+
+    if (!display.includes('.')) {
+      setDisplay(display + '.');
     }
+  }, [display, waitingForSecondOperand]);
+
+  const clear = () => {
+    setDisplay('0');
+    setFirstOperand(null);
+    setOperator(null);
+    setWaitingForSecondOperand(false);
   };
 
-  const appendNumber = (number: string) => {
-    if (number === '.' && currentOperand.includes('.')) return;
-    if (overwrite) {
-      setCurrentOperand(number === '.' ? '0.' : number);
-      setOverwrite(false);
-    } else {
-      if (currentOperand === '0' && number !== '.') {
-        setCurrentOperand(number);
-      } else {
-        setCurrentOperand(currentOperand + number);
-      }
+  const performOperation = useCallback((nextOperator: Operation) => {
+    const inputValue = parseFloat(display);
+
+    if (firstOperand === null) {
+      setFirstOperand(inputValue);
+    } else if (operator) {
+      const result = calculate(firstOperand, inputValue, operator);
+      const formattedResult = String(parseFloat(result.toFixed(8))); // Prevent long decimals
+      
+      setDisplay(formattedResult);
+      setFirstOperand(result);
+      
+      // Add to history
+      setHistory(prev => [`${firstOperand} ${operator} ${inputValue} = ${formattedResult}`, ...prev].slice(0, 10));
     }
-  };
 
-  const chooseOperation = (op: Operation) => {
-    if (currentOperand === '') return;
-    if (previousOperand != null) {
-      // If we already have a pending operation, calculate it first so we can chain (e.g., 2 + 2 + 2)
-      const result = evaluate(previousOperand, currentOperand, operation);
-      setPreviousOperand(result.toString());
-      setOperation(op);
-      setCurrentOperand(result.toString());
-      setOverwrite(true);
-    } else {
-      setOperation(op);
-      setPreviousOperand(currentOperand);
-      setOverwrite(true);
-    }
-  };
+    setWaitingForSecondOperand(true);
+    setOperator(nextOperator);
+  }, [display, firstOperand, operator]);
 
-  const evaluate = (prev: string, current: string, op: Operation): number => {
-    const p = parseFloat(prev);
-    const c = parseFloat(current);
-    if (isNaN(p) || isNaN(c)) return 0;
-
-    let computation = 0;
+  const calculate = (first: number, second: number, op: string) => {
     switch (op) {
-      case '+':
-        computation = p + c;
-        break;
-      case '-':
-        computation = p - c;
-        break;
-      case '*':
-        computation = p * c;
-        break;
-      case '/':
-        computation = p / c;
-        break;
+      case '+': return first + second;
+      case '-': return first - second;
+      case '*': return first * second;
+      case '/': return second === 0 ? 0 : first / second;
+      default: return second;
     }
-    return computation;
   };
 
-  const calculate = () => {
-    if (operation == null || previousOperand == null) return;
-    const result = evaluate(previousOperand, currentOperand, operation);
-    
-    // Prevent long decimals
-    const formattedResult = parseFloat(result.toFixed(10)).toString();
-
-    // Add to history
-    const historyEntry = `${formatOperand(previousOperand)} ${operation} ${formatOperand(currentOperand)} = ${formatOperand(formattedResult)}`;
-    setHistory(prev => [historyEntry, ...prev].slice(0, 10));
-
-    setCurrentOperand(formattedResult);
-    setPreviousOperand(null);
-    setOperation(null);
-    setOverwrite(true);
+  const handleEquals = () => {
+    if (!operator || firstOperand === null) return;
+    performOperation(operator);
+    setOperator(null);
+    setFirstOperand(null);
   };
 
-  // Percentage logic: logic varies by calculator, here we treat it as /100 of current value
-  const percentage = () => {
-    const current = parseFloat(currentOperand);
-    if (isNaN(current)) return;
-    setCurrentOperand((current / 100).toString());
-  };
-
-  // --- Keyboard Support ---
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key >= '0' && e.key <= '9') appendNumber(e.key);
-    if (e.key === '.') appendNumber('.');
-    if (e.key === '=' || e.key === 'Enter') {
-      e.preventDefault();
-      calculate();
+  const handleBackspace = () => {
+    if (waitingForSecondOperand) return;
+    if (display.length === 1) {
+      setDisplay('0');
+    } else {
+      setDisplay(display.slice(0, -1));
     }
-    if (e.key === 'Backspace') deleteDigit();
-    if (e.key === 'Escape') clear();
-    if (e.key === '+' || e.key === '-' || e.key === '*' || e.key === '/') chooseOperation(e.key as Operation);
-  }, [currentOperand, previousOperand, operation, overwrite]);
+  };
 
+  // Keyboard support
   useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const { key } = event;
 
-  // --- Components ---
-  const Button = ({ 
-    children, 
-    onClick, 
-    className = "", 
-    variant = "default" 
-  }: { 
-    children: React.ReactNode, 
-    onClick: () => void, 
-    className?: string,
-    variant?: "default" | "primary" | "secondary" | "danger"
-  }) => {
-    const baseStyle = "h-16 sm:h-20 text-2xl font-medium rounded-full transition-all duration-150 active:scale-95 flex items-center justify-center select-none";
-    
-    const variants = {
-      default: "bg-gray-200 text-gray-900 hover:bg-gray-300 dark:bg-zinc-800 dark:text-white dark:hover:bg-zinc-700",
-      primary: "bg-primary text-white hover:bg-primary-hover shadow-lg shadow-orange-500/20",
-      secondary: "bg-gray-300 text-gray-900 hover:bg-gray-400 dark:bg-zinc-700 dark:text-white dark:hover:bg-zinc-600",
-      danger: "bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+      if (/\d/.test(key)) {
+        inputDigit(key);
+      } else if (key === '.') {
+        inputDecimal();
+      } else if (key === 'Backspace') {
+        handleBackspace();
+      } else if (key === 'Enter' || key === '=') {
+        event.preventDefault();
+        handleEquals();
+      } else if (key === '+') {
+        performOperation('+');
+      } else if (key === '-') {
+        performOperation('-');
+      } else if (key === '*') {
+        performOperation('*');
+      } else if (key === '/') {
+        performOperation('/');
+      } else if (key === 'Escape') {
+        clear();
+      }
     };
 
-    return (
-      <button onClick={onClick} className={`${baseStyle} ${variants[variant]} ${className}`}>
-        {children}
-      </button>
-    );
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [inputDigit, inputDecimal, performOperation, handleBackspace, handleEquals]); // dependencies needed for closure freshness
+
+  const getButtonClass = (type: 'number' | 'operator' | 'action' | 'equals') => {
+    const base = "h-16 rounded-2xl text-xl font-medium transition-all duration-150 active:scale-95 flex items-center justify-center select-none shadow-sm";
+    switch (type) {
+      case 'number':
+        return `${base} bg-slate-700 text-white hover:bg-slate-600 active:bg-slate-500`;
+      case 'operator':
+        return `${base} bg-indigo-500 text-white hover:bg-indigo-400 active:bg-indigo-600 shadow-indigo-500/20`;
+      case 'action':
+        return `${base} bg-slate-500 text-slate-100 hover:bg-slate-400 active:bg-slate-600`;
+      case 'equals':
+        return `${base} bg-emerald-500 text-white hover:bg-emerald-400 active:bg-emerald-600 shadow-emerald-500/20`;
+    }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      {/* Main Container */}
-      <div className="relative w-full max-w-[400px] bg-white dark:bg-black rounded-[2.5rem] shadow-2xl dark:shadow-zinc-900/50 overflow-hidden border border-gray-200 dark:border-zinc-800">
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+      <div className="bg-slate-800 p-6 rounded-3xl shadow-2xl w-full max-w-sm border border-slate-700 relative overflow-hidden">
         
-        {/* Header / Tools */}
-        <div className="flex justify-between items-center px-6 pt-6 pb-2">
-           <button 
-            onClick={() => setShowHistory(!showHistory)}
-            className="p-2 text-gray-500 hover:text-gray-900 dark:text-zinc-500 dark:hover:text-white transition-colors"
-          >
-            <History size={20} />
-          </button>
-          
-          <div className="flex gap-2">
+        {/* History Overlay */}
+        <div className={`absolute inset-0 bg-slate-800/95 backdrop-blur-sm z-20 transition-transform duration-300 flex flex-col p-6 ${showHistory ? 'translate-y-0' : 'translate-y-full'}`}>
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="text-slate-400 font-medium uppercase text-sm tracking-wider">History</h3>
+                <button onClick={() => setShowHistory(false)} className="p-2 hover:bg-slate-700 rounded-lg text-slate-300">
+                    <Delete size={20} className="rotate-180" />
+                </button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-3">
+                {history.length === 0 ? (
+                    <div className="text-slate-500 text-center mt-10">No calculations yet</div>
+                ) : (
+                    history.map((item, idx) => (
+                        <div key={idx} className="text-right p-3 bg-slate-700/50 rounded-xl">
+                           <div className="text-emerald-400 font-mono">{item}</div>
+                        </div>
+                    ))
+                )}
+            </div>
             <button 
-              onClick={() => setDarkMode(!darkMode)}
-              className="p-2 text-gray-500 hover:text-gray-900 dark:text-zinc-500 dark:hover:text-white transition-colors"
+                onClick={() => setHistory([])} 
+                className="mt-4 w-full py-3 text-red-400 hover:bg-slate-700/50 rounded-xl transition-colors text-sm font-medium"
             >
-              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+                Clear History
             </button>
-          </div>
         </div>
 
-        {/* History Overlay */}
-        {showHistory && (
-          <div className="absolute inset-0 bg-white/95 dark:bg-black/95 z-20 flex flex-col p-6 backdrop-blur-sm">
-             <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">History</h2>
-                <button onClick={() => setShowHistory(false)} className="text-sm text-primary font-medium">Close</button>
-             </div>
-             <div className="flex-1 overflow-y-auto space-y-4">
-                {history.length === 0 ? (
-                  <p className="text-center text-gray-400 dark:text-zinc-600 mt-10">No history yet</p>
-                ) : (
-                  history.map((entry, idx) => (
-                    <div key={idx} className="text-right border-b border-gray-100 dark:border-zinc-800 pb-2 last:border-0">
-                      <p className="text-lg text-gray-600 dark:text-zinc-400 font-mono">{entry}</p>
-                    </div>
-                  ))
-                )}
-             </div>
-             <button 
-              onClick={() => setHistory([])} 
-              className="mt-4 flex items-center justify-center gap-2 py-3 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-xl transition-colors"
-            >
-                <Delete size={18} /> Clear History
-             </button>
-          </div>
-        )}
-
         {/* Display */}
-        <div className="px-8 pb-8 pt-4 text-right flex flex-col justify-end h-48">
-          <div className="text-gray-500 dark:text-zinc-500 text-xl font-medium h-8 overflow-hidden transition-all">
-            {previousOperand ? `${formatOperand(previousOperand)} ${operation}` : ''}
+        <div className="mb-6">
+          <div className="flex justify-between mb-2">
+             <button 
+                onClick={() => setShowHistory(true)} 
+                className={`p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors ${history.length > 0 ? 'text-indigo-400' : ''}`}
+             >
+                 <History size={20} />
+             </button>
+             <div className="h-6 text-right text-slate-400 text-sm font-mono overflow-hidden">
+                {firstOperand !== null && operator ? `${firstOperand} ${operator}` : ''}
+             </div>
           </div>
-          <div className="text-gray-900 dark:text-white text-6xl font-light tracking-tight overflow-x-auto overflow-y-hidden whitespace-nowrap scrollbar-hide">
-            {formatOperand(currentOperand)}
+          <div className="h-20 flex items-end justify-end overflow-hidden">
+            <div className="text-5xl font-light text-white tracking-wide break-all text-right font-mono">
+              {display}
+            </div>
           </div>
         </div>
 
         {/* Keypad */}
-        <div className="grid grid-cols-4 gap-3 px-6 pb-8">
-          <Button onClick={clear} variant="secondary" className="text-xl text-red-500 dark:text-red-400">AC</Button>
-          <Button onClick={deleteDigit} variant="secondary"><Delete size={24}/></Button>
-          <Button onClick={percentage} variant="secondary">%</Button>
-          <Button onClick={() => chooseOperation('/')} variant="primary" className="text-3xl">÷</Button>
+        <div className="grid grid-cols-4 gap-3">
+          <button onClick={clear} className={`${getButtonClass('action')} text-red-300`}>
+            AC
+          </button>
+          <button onClick={handleBackspace} className={getButtonClass('action')}>
+            <Delete size={24} />
+          </button>
+          <button onClick={() => performOperation('/')} className={getButtonClass('operator')}>
+            &divide;
+          </button>
+          <button onClick={() => performOperation('*')} className={getButtonClass('operator')}>
+            &times;
+          </button>
 
-          <Button onClick={() => appendNumber('7')}>7</Button>
-          <Button onClick={() => appendNumber('8')}>8</Button>
-          <Button onClick={() => appendNumber('9')}>9</Button>
-          <Button onClick={() => chooseOperation('*')} variant="primary" className="text-3xl">×</Button>
+          <button onClick={() => inputDigit('7')} className={getButtonClass('number')}>7</button>
+          <button onClick={() => inputDigit('8')} className={getButtonClass('number')}>8</button>
+          <button onClick={() => inputDigit('9')} className={getButtonClass('number')}>9</button>
+          <button onClick={() => performOperation('-')} className={getButtonClass('operator')}>
+            &minus;
+          </button>
 
-          <Button onClick={() => appendNumber('4')}>4</Button>
-          <Button onClick={() => appendNumber('5')}>5</Button>
-          <Button onClick={() => appendNumber('6')}>6</Button>
-          <Button onClick={() => chooseOperation('-')} variant="primary" className="text-3xl">−</Button>
+          <button onClick={() => inputDigit('4')} className={getButtonClass('number')}>4</button>
+          <button onClick={() => inputDigit('5')} className={getButtonClass('number')}>5</button>
+          <button onClick={() => inputDigit('6')} className={getButtonClass('number')}>6</button>
+          <button onClick={() => performOperation('+')} className={getButtonClass('operator')}>
+            +
+          </button>
 
-          <Button onClick={() => appendNumber('1')}>1</Button>
-          <Button onClick={() => appendNumber('2')}>2</Button>
-          <Button onClick={() => appendNumber('3')}>3</Button>
-          <Button onClick={() => chooseOperation('+')} variant="primary" className="text-3xl">+</Button>
+          <button onClick={() => inputDigit('1')} className={getButtonClass('number')}>1</button>
+          <button onClick={() => inputDigit('2')} className={getButtonClass('number')}>2</button>
+          <button onClick={() => inputDigit('3')} className={getButtonClass('number')}>3</button>
+          <button onClick={handleEquals} className={`${getButtonClass('equals')} row-span-2 h-full`}>
+            <Equal size={28} />
+          </button>
 
-          <Button onClick={() => appendNumber('0')} className="col-span-2 rounded-[2.5rem]">0</Button>
-          <Button onClick={() => appendNumber('.')}>.</Button>
-          <Button onClick={calculate} variant="primary" className="text-3xl">=</Button>
+          <button onClick={() => inputDigit('0')} className={`${getButtonClass('number')} col-span-2 w-full`}>
+             0
+          </button>
+          <button onClick={inputDecimal} className={getButtonClass('number')}>
+            .
+          </button>
         </div>
-        
-        {/* Decorative Bottom Bar (iOS style) */}
-        <div className="w-32 h-1 bg-gray-300 dark:bg-zinc-800 rounded-full mx-auto mb-2"></div>
       </div>
     </div>
   );
